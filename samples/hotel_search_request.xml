@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:ns="http://schemas.xmltravelgate.com/hub/2012/06"
+                  xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+   <soapenv:Header>
+      <wsse:Security>
+         <wsse:UsernameToken>
+            <wsse:Username>abc</wsse:Username>
+            <wsse:Password>def</wsse:Password>
+         </wsse:UsernameToken>
+      </wsse:Security>
+   </soapenv:Header>
+   <soapenv:Body>
+      <ns:Avail>
+         <ns:availRQ>
+            <ns:timeoutMilliseconds>25000</ns:timeoutMilliseconds>
+            <ns:version>1</ns:version>
+            <ns:providerRQ>
+               <ns:code>B2BHD</ns:code>
+               <ns:id>GEN2</ns:id>
+               <ns:rqXML>
+                  <AvailRQ>
+                     <timeoutMilliseconds>25000</timeoutMilliseconds>
+                     <source>
+                        <languageCode>en</languageCode>
+                     </source>
+                     <filterAuditData>
+                        <registerTransactions>false</registerTransactions>
+                     </filterAuditData>
+                     <hubUser>abc</hubUser>
+                     <hubProvider>xyz</hubProvider>
+                     <hubProviderInstanceCode>xyz</hubProviderInstanceCode>
+                     <AccessID>123</AccessID>
+                     <Configuration>
+                        <UrlGeneric>https://v3.b2bholidays.com/api/hub</UrlGeneric>
+                        <Parameters>
+                           <Parameter key="HotelXAccessCode" value="123"/>
+                           <Parameter key="username" value="abc"/>
+                           <Parameter key="password" value="def"/>
+                        </Parameters>
+                     </Configuration>
+                     <SearchType>Combined</SearchType>
+                     <CancellationPolicies>true</CancellationPolicies>
+                     <DailyPrices>true</DailyPrices>
+                     <DailyRatePlans>true</DailyRatePlans>
+                     <Currency>GBP</Currency>
+                     <Nationality>US</Nationality>
+                     <Markets>
+                        <Market>US</Market>
+                     </Markets>
+                     <AvailDestinations>
+                        <Destination type="HOT" code="39660633"/>
+                        <Destination type="HOT" code="39591685"/>
+                        <Destination type="HOT" code="15351898"/>
+                        <Destination type="HOT" code="39776757"/>
+                        <Destination type="HOT" code="39593317"/>
+                     </AvailDestinations>
+                     <StartDate>11/06/2025</StartDate>
+                     <EndDate>12/06/2025</EndDate>
+                     <RoomCandidates>
+                        <RoomCandidate cantidade="1" id="1">
+                           <Paxes>
+                              <Pax age="30" id="1"/>
+                           </Paxes>
+                        </RoomCandidate>
+                     </RoomCandidates>
+                  </AvailRQ>
+               </ns:rqXML>
+            </ns:providerRQ>
+         </ns:availRQ>
+      </ns:Avail>
+   </soapenv:Body>
+</soapenv:Envelope>

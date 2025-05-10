@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AvailRS xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Hotels>
+    <Hotel code="39776757" name="Days Inn By Wyndham Fargo">
+      <MealPlans>
+        <MealPlan code="RO">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="84.82" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="ROOM, QUEEN BED" numberOfUnits="1" nonRefundable="false">
+                  <Price currency="GBP" amount="84.82" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                  <CancelPenalties nonRefundable="false">
+                    <CancelPenalty>
+                      <HoursBefore>962</HoursBefore>
+                      <Penalty type="Importe" currency="GBP">84.82</Penalty>
+                      <Deadline>2025-05-02T10:00:00Z</Deadline>
+                      <CalculatedDeadline>true</CalculatedDeadline>
+                    </CancelPenalty>
+                    <CancelPenalty>
+                      <HoursBefore>26</HoursBefore>
+                      <Penalty type="Importe" currency="GBP">84.82</Penalty>
+                      <Deadline>2025-06-10T10:00:00Z</Deadline>
+                      <CalculatedDeadline>true</CalculatedDeadline>
+                    </CancelPenalty>
+                  </CancelPenalties>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="false">
+                <CancelPenalty>
+                  <HoursBefore>962</HoursBefore>
+                  <Penalty type="Importe" currency="GBP">84.82</Penalty>
+                  <Deadline>2025-05-02T10:00:00Z</Deadline>
+                  <CalculatedDeadline>true</CalculatedDeadline>
+                </CancelPenalty>
+                <CancelPenalty>
+                  <HoursBefore>26</HoursBefore>
+                  <Penalty type="Importe" currency="GBP">84.82</Penalty>
+                  <Deadline>2025-06-10T10:00:00Z</Deadline>
+                  <CalculatedDeadline>true</CalculatedDeadline>
+                </CancelPenalty>
+              </CancelPenalties>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="39776757|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+        <MealPlan code="CBF">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="77.55" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="1 Queen Bed, Mobility Accessible Room, Non-Smoking" numberOfUnits="1" nonRefundable="true">
+                  <Price currency="GBP" amount="77.55" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="true"/>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="39776757|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+      </MealPlans>
+    </Hotel>
+    <Hotel code="39593317" name="Super 8 By Wyndham Emporia">
+      <MealPlans>
+        <MealPlan code="BBF">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="68.28" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="1 King Bed, Non-Smoking" numberOfUnits="1" nonRefundable="false">
+                  <Price currency="GBP" amount="68.28" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                  <CancelPenalties nonRefundable="false">
+                    <CancelPenalty>
+                      <HoursBefore>17</HoursBefore>
+                      <Penalty type="Importe" currency="GBP">68.28</Penalty>
+                      <Deadline>2025-06-10T19:00:00Z</Deadline>
+                      <CalculatedDeadline>true</CalculatedDeadline>
+                    </CancelPenalty>
+                  </CancelPenalties>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="false">
+                <CancelPenalty>
+                  <HoursBefore>17</HoursBefore>
+                  <Penalty type="Importe" currency="GBP">68.28</Penalty>
+                  <Deadline>2025-06-10T19:00:00Z</Deadline>
+                  <CalculatedDeadline>true</CalculatedDeadline>
+                </CancelPenalty>
+              </CancelPenalties>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="39593317|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+      </MealPlans>
+    </Hotel>
+    <Hotel code="15351898" name="Homewood Suites By Hilton Hartford-Farmington">
+      <MealPlans>
+        <MealPlan code="BB">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="259.3" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="1 BDRM KING HEARING ACC SUITE VIS FIREALRM/DOOR/PHN ALRT-KTCHN-SOFABD FREE WIFI-DAILY HOT BREAKFAST-24/7 SUITE SHOP" numberOfUnits="1" nonRefundable="false">
+                  <Price currency="GBP" amount="259.3" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                  <CancelPenalties nonRefundable="false">
+                    <CancelPenalty>
+                      <HoursBefore>158</HoursBefore>
+                      <Penalty type="Porcentaje" currency="GBP">100</Penalty>
+                      <Deadline>2025-06-04T22:00:00Z</Deadline>
+                      <CalculatedDeadline>true</CalculatedDeadline>
+                    </CancelPenalty>
+                  </CancelPenalties>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="false">
+                <CancelPenalty>
+                  <HoursBefore>158</HoursBefore>
+                  <Penalty type="Porcentaje" currency="GBP">100</Penalty>
+                  <Deadline>2025-06-04T22:00:00Z</Deadline>
+                  <CalculatedDeadline>true</CalculatedDeadline>
+                </CancelPenalty>
+              </CancelPenalties>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="15351898|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+        <MealPlan code="B">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="245.11" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="1BDRM 2DBL MOB HR ACC SHWR" numberOfUnits="1" nonRefundable="false">
+                  <Price currency="GBP" amount="245.11" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                  <CancelPenalties nonRefundable="false">
+                    <CancelPenalty>
+                      <HoursBefore>104</HoursBefore>
+                      <Penalty type="Importe" currency="GBP">245.11</Penalty>
+                      <Deadline>2025-06-07T03:59:00Z</Deadline>
+                      <CalculatedDeadline>true</CalculatedDeadline>
+                    </CancelPenalty>
+                  </CancelPenalties>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="false">
+                <CancelPenalty>
+                  <HoursBefore>104</HoursBefore>
+                  <Penalty type="Importe" currency="GBP">245.11</Penalty>
+                  <Deadline>2025-06-07T03:59:00Z</Deadline>
+                  <CalculatedDeadline>true</CalculatedDeadline>
+                </CancelPenalty>
+              </CancelPenalties>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="15351898|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+      </MealPlans>
+    </Hotel>
+    <Hotel code="39660633" name="Hampton Inn Sulphur-Lake Charles">
+      <MealPlans>
+        <MealPlan code="BB">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="124.56" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="1 KING MOBILITY/HEARING ACC 3X3 SHWR NOSMOK VIS FIREALRM/DOOR/PHN ALRT/HDTV MICROWV/FRIDGE/FREE WI-FI/HOT BRKFST" numberOfUnits="1" nonRefundable="true">
+                  <Price currency="GBP" amount="124.56" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="true"/>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="39660633|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+        <MealPlan code="B">
+          <Options>
+            <Option type="Hotel" paymentType="MerchantPay" status="OK">
+              <Price currency="GBP" amount="118.76" binding="false" commission="-1" minimumSellingPrice="-1"/>
+              <Rooms>
+                <Room id="1#ND1" roomCandidateRefId="1" code="ND1" description="1 KING W/MICROWV-FRIDGE NS" numberOfUnits="1" nonRefundable="true">
+                  <Price currency="GBP" amount="118.76" binding="false" commission="-1" minimumSellingPrice="-1"/>
+                </Room>
+              </Rooms>
+              <CancelPenalties nonRefundable="true"/>
+              <RateRules/>
+              <Fees/>
+              <Parameters>
+                <Parameter key="search_token" value="39660633|2025-06-11|2025-06-12|A|US|GBP"/>
+              </Parameters>
+            </Option>
+          </Options>
+        </MealPlan>
+      </MealPlans>
+    </Hotel>
+  </Hotels>
+</AvailRS>
