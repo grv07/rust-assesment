@@ -1,9 +1,14 @@
 // Part 2: XML Processing Implementation
+// MY NOTES
+// test_load_sample_json and test_sample_json_to_xml_workflow will fails and they required to either change in json file or structs
+// Json file format shold be like 'test_version' function.
+//
+// 'xml_to_processed_response' is same as 'process' func and also not getting called by anywhere so i am expecting that this is not for me to impl.
+//
 
-use std::{borrow::Cow, collections::HashMap, str::from_utf8};
+use std::collections::HashMap;
 
 use quick_xml::{
-    de::from_str,
     events::{attributes::Attributes, Event},
     name::QName,
     Reader,
@@ -74,15 +79,15 @@ pub struct SupplierRate {
     pub rate_id: String,
     pub board_type: String,
     pub price: f64,
-    pub cancellation_policies: Vec<CancellationPolicy>,
+    pub cancellation_policies: Vec<JsonCancellationPolicy>,
     pub booking_code: String,
 }
 
-// #[derive(Clone, Debug, Deserialize, Serialize)]
-// pub struct CancellationPolicy {
-//     pub from_date: String,
-//     pub amount: f64,
-// }
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct JsonCancellationPolicy {
+    pub from_date: String,
+    pub amount: f64,
+}
 
 // Data structures for XML response
 #[derive(Debug)]
@@ -355,10 +360,10 @@ impl HotelSearchProcessor {
                             xml.push_str("                    <CancelPenalty>\n");
                             xml.push_str("                      <HoursBefore>24</HoursBefore>\n"); // Simplified
                             xml.push_str(&format!("                      <Penalty type=\"Importe\" currency=\"{}\">{}</Penalty>\n", 
-                                supplier_response.currency, policy.penalty_amount));
+                                supplier_response.currency, policy.amount));
                             xml.push_str(&format!(
                                 "                      <Deadline>{}</Deadline>\n",
-                                policy.deadline
+                                policy.from_date
                             ));
                             xml.push_str("                    </CancelPenalty>\n");
                         }
@@ -394,7 +399,7 @@ impl HotelSearchProcessor {
     // Convert XML response to ProcessedResponse format
     pub fn xml_to_processed_response(
         &self,
-        xml: &str,
+        _xml: &str,
     ) -> Result<ProcessedResponse, ProcessingError> {
         // TODO: Implement this to convert XML to ProcessedResponse
         // This would be implemented in a real solution
@@ -573,116 +578,116 @@ mod tests {
     use super::*;
 
     // Test JSON to XML conversion
-    // #[test]
-    // fn test_json_to_xml_conversion() {
-    //     let processor = HotelSearchProcessor::new();
+    #[test]
+    fn test_version() {
+        let processor = HotelSearchProcessor::new();
 
-    //     // Sample JSON for testing
-    //     let sample_json = r#"{
-    //         "hotels": [
-    //             {
-    //                 "hotel_id": "12345",
-    //                 "name": "Test Hotel",
-    //                 "category": 4,
-    //                 "destination_code": "NYC",
-    //                 "rooms": [
-    //                     {
-    //                         "room_id": "DBL",
-    //                         "name": "Double Room",
-    //                         "capacity": {
-    //                             "adults": 2,
-    //                             "children": 0
-    //                         },
-    //                         "rates": [
-    //                             {
-    //                                 "rate_id": "R1",
-    //                                 "board_type": "BB",
-    //                                 "price": 120.50,
-    //                                 "booking_code": "TESTCODE",
-    //                                 "cancellation_policies": [
-    //                                     {
-    //                                         "from_date": "2023-12-01T00:00:00Z",
-    //                                         "amount": 50.25
-    //                                     }
-    //                                 ]
-    //                             }
-    //                         ]
-    //                     }
-    //                 ]
-    //             }
-    //         ],
-    //         "search_id": "SEARCH123",
-    //         "currency": "USD",
-    //         "timestamp": "2023-11-15T10:30:00Z"
-    //     }"#;
+        // Sample JSON for testing
+        let sample_json = r#"{
+            "hotels": [
+                {
+                    "hotel_id": "12345",
+                    "name": "Test Hotel",
+                    "category": 4,
+                    "destination_code": "NYC",
+                    "rooms": [
+                        {
+                            "room_id": "DBL",
+                            "name": "Double Room",
+                            "capacity": {
+                                "adults": 2,
+                                "children": 0
+                            },
+                            "rates": [
+                                {
+                                    "rate_id": "R1",
+                                    "board_type": "BB",
+                                    "price": 120.50,
+                                    "booking_code": "TESTCODE",
+                                    "cancellation_policies": [
+                                        {
+                                            "from_date": "2023-12-01T00:00:00Z",
+                                            "amount": 50.25
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "search_id": "SEARCH123",
+            "currency": "USD",
+            "timestamp": "2023-11-15T10:30:00Z"
+        }"#;
 
-    //     // Convert JSON to XML
-    //     let xml_result = processor.convert_json_to_xml(sample_json);
-    //     assert!(
-    //         xml_result.is_ok(),
-    //         "JSON to XML conversion failed: {:?}",
-    //         xml_result.err()
-    //     );
+        // Convert JSON to XML
+        let xml_result = processor.convert_json_to_xml(sample_json);
+        assert!(
+            xml_result.is_ok(),
+            "JSON to XML conversion failed: {:?}",
+            xml_result.err()
+        );
 
-    //     let xml = xml_result.unwrap();
+        let xml = xml_result.unwrap();
 
-    //     // Verify XML structure
-    //     assert!(xml.contains("<AvailRS>"));
-    //     assert!(xml.contains("<Hotel code=\"12345\""));
-    //     assert!(xml.contains("<MealPlan code=\"BB\">"));
-    //     assert!(xml.contains("<Room id=\"1#DBL\""));
-    //     assert!(xml.contains("<Price currency=\"USD\" amount=\"120.5\""));
-    //     assert!(xml.contains("<Deadline>2023-12-01T00:00:00Z</Deadline>"));
-    //     assert!(xml.contains("<Parameter key=\"search_token\" value=\"12345|||||SEARCH123\"/>"));
-    // }
+        // Verify XML structure
+        assert!(xml.contains("<AvailRS>"));
+        assert!(xml.contains("<Hotel code=\"12345\""));
+        assert!(xml.contains("<MealPlan code=\"BB\">"));
+        assert!(xml.contains("<Room id=\"1#DBL\""));
+        assert!(xml.contains("<Price currency=\"USD\" amount=\"120.5\""));
+        assert!(xml.contains("<Deadline>2023-12-01T00:00:00Z</Deadline>"));
+        assert!(xml.contains("<Parameter key=\"search_token\" value=\"12345|||||SEARCH123\"/>"));
+    }
 
     // Test loading the sample JSON file
-    // #[test]
-    // fn test_load_sample_json() {
-    //     let processor = HotelSearchProcessor::new();
-    //     let result = processor.load_sample_json();
-    //     assert!(
-    //         result.is_ok(),
-    //         "Failed to load sample JSON: {:?}",
-    //         result.err()
-    //     );
+    #[test]
+    fn test_load_sample_json() {
+        let processor = HotelSearchProcessor::new();
+        let result = processor.load_sample_json();
+        assert!(
+            result.is_ok(),
+            "Failed to load sample JSON: {:?}",
+            result.err()
+        );
 
-    //     // Verify it's a valid JSON
-    //     let json = result.unwrap();
-    //     let parse_result = serde_json::from_str::<SupplierResponse>(&json);
-    //     assert!(
-    //         parse_result.is_ok(),
-    //         "Failed to parse sample JSON: {:?}",
-    //         parse_result.err()
-    //     );
-    // }
+        // Verify it's a valid JSON
+        let json = result.unwrap();
+        let parse_result = serde_json::from_str::<SupplierResponse>(&json);
+        assert!(
+            parse_result.is_ok(),
+            "Failed to parse sample JSON: {:?}",
+            parse_result.err()
+        );
+    }
 
     // // Test full JSON to XML conversion workflow using sample files
-    // #[test]
-    // fn test_sample_json_to_xml_workflow() {
-    //     let processor = HotelSearchProcessor::new();
+    #[test]
+    fn test_sample_json_to_xml_workflow() {
+        let processor = HotelSearchProcessor::new();
 
-    //     // Load sample JSON
-    //     let json_result = processor.load_sample_json();
-    //     assert!(
-    //         json_result.is_ok(),
-    //         "Failed to load sample JSON: {:?}",
-    //         json_result.err()
-    //     );
+        // Load sample JSON
+        let json_result = processor.load_sample_json();
+        assert!(
+            json_result.is_ok(),
+            "Failed to load sample JSON: {:?}",
+            json_result.err()
+        );
 
-    //     // Convert JSON to XML
-    //     let xml_result = processor.convert_json_to_xml(&json_result.unwrap());
-    //     assert!(
-    //         xml_result.is_ok(),
-    //         "JSON to XML conversion failed: {:?}",
-    //         xml_result.err()
-    //     );
+        // Convert JSON to XML
+        let xml_result = processor.convert_json_to_xml(&json_result.unwrap());
+        assert!(
+            xml_result.is_ok(),
+            "JSON to XML conversion failed: {:?}",
+            xml_result.err()
+        );
 
-    //     let xml = xml_result.unwrap();
-    //     assert!(xml.contains("<AvailRS>"));
-    //     assert!(xml.contains("<Hotels>"));
-    //     // The actual content will depend on the sample JSON file
-    // }
+        let xml = xml_result.unwrap();
+        assert!(xml.contains("<AvailRS>"));
+        assert!(xml.contains("<Hotels>"));
+        // The actual content will depend on the sample JSON file
+    }
 
     // Example test for processing XML (commented out as it would be implemented by candidates)
     #[test]
@@ -714,143 +719,148 @@ mod tests {
     }
 
     // Example test for filtering options (commented out as it would be implemented by candidates)
-    // #[test]
-    // fn test_filter_options() {
-    //     let processor = HotelSearchProcessor::new();
-    //
-    //     // Create a sample processed response with multiple hotels
-    //     let mut response = ProcessedResponse {
-    //         search_id: "test_search".to_string(),
-    //         total_options: 3,
-    //         hotels: Vec::new(),
-    //         currency: "GBP".to_string(),
-    //         nationality: "GB".to_string(),
-    //         check_in: "2025-06-01".to_string(),
-    //         check_out: "2025-06-05".to_string(),
-    //     };
-    //
-    //     // Add sample hotels with different properties
-    //     response.hotels.push(HotelOption {
-    //         hotel_id: "hotel1".to_string(),
-    //         hotel_name: "Luxury Hotel".to_string(),
-    //         room_type: "Deluxe King".to_string(),
-    //         room_description: "Spacious room with king bed".to_string(),
-    //         board_type: "BB".to_string(), // Bed & Breakfast
-    //         price: Price { amount: 150.0, currency: "GBP".to_string() },
-    //         cancellation_policies: vec![
-    //             CancellationPolicy {
-    //                 deadline: "2025-05-30T00:00:00Z".to_string(),
-    //                 penalty_amount: 75.0,
-    //                 currency: "GBP".to_string(),
-    //                 hours_before: 48,
-    //                 penalty_type: "Importe".to_string(),
-    //             }
-    //         ],
-    //         payment_type: "MerchantPay".to_string(),
-    //         is_refundable: true,
-    //         search_token: "token1".to_string(),
-    //     });
-    //
-    //     response.hotels.push(HotelOption {
-    //         hotel_id: "hotel2".to_string(),
-    //         hotel_name: "Budget Inn".to_string(),
-    //         room_type: "Standard Twin".to_string(),
-    //         room_description: "Basic room with twin beds".to_string(),
-    //         board_type: "RO".to_string(), // Room Only
-    //         price: Price { amount: 80.0, currency: "GBP".to_string() },
-    //         cancellation_policies: vec![],
-    //         payment_type: "MerchantPay".to_string(),
-    //         is_refundable: false,
-    //         search_token: "token2".to_string(),
-    //     });
-    //
-    //     response.hotels.push(HotelOption {
-    //         hotel_id: "hotel3".to_string(),
-    //         hotel_name: "Resort Spa".to_string(),
-    //         room_type: "Premium Suite".to_string(),
-    //         room_description: "Luxury suite with ocean view".to_string(),
-    //         board_type: "HB".to_string(), // Half Board
-    //         price: Price { amount: 250.0, currency: "GBP".to_string() },
-    //         cancellation_policies: vec![
-    //             CancellationPolicy {
-    //                 deadline: "2025-05-25T00:00:00Z".to_string(),
-    //                 penalty_amount: 100.0,
-    //                 currency: "GBP".to_string(),
-    //                 hours_before: 168,
-    //                 penalty_type: "Importe".to_string(),
-    //             }
-    //         ],
-    //         payment_type: "MerchantPay".to_string(),
-    //         is_refundable: true,
-    //         search_token: "token3".to_string(),
-    //     });
-    //
-    //     // Test 1: Filter by max price
-    //     let criteria1 = FilterCriteria {
-    //         max_price: Some(100.0),
-    //         board_types: None,
-    //         free_cancellation: false,
-    //         hotel_ids: None,
-    //         room_type_contains: None,
-    //     };
-    //
-    //     let results1 = processor.filter_options(&response, &criteria1);
-    //     assert_eq!(results1.len(), 1);
-    //     assert_eq!(results1[0].hotel_id, "hotel2");
-    //
-    //     // Test 2: Filter by board type
-    //     let criteria2 = FilterCriteria {
-    //         max_price: None,
-    //         board_types: Some(vec!["BB".to_string(), "HB".to_string()]),
-    //         free_cancellation: false,
-    //         hotel_ids: None,
-    //         room_type_contains: None,
-    //     };
-    //
-    //     let results2 = processor.filter_options(&response, &criteria2);
-    //     assert_eq!(results2.len(), 2);
-    //     assert!(results2.iter().any(|h| h.hotel_id == "hotel1"));
-    //     assert!(results2.iter().any(|h| h.hotel_id == "hotel3"));
-    //
-    //     // Test 3: Filter by free cancellation
-    //     let criteria3 = FilterCriteria {
-    //         max_price: None,
-    //         board_types: None,
-    //         free_cancellation: true,
-    //         hotel_ids: None,
-    //         room_type_contains: None,
-    //     };
-    //
-    //     let results3 = processor.filter_options(&response, &criteria3);
-    //     assert_eq!(results3.len(), 2);
-    //     assert!(results3.iter().all(|h| h.is_refundable));
-    //
-    //     // Test 4: Filter by room type
-    //     let criteria4 = FilterCriteria {
-    //         max_price: None,
-    //         board_types: None,
-    //         free_cancellation: false,
-    //         hotel_ids: None,
-    //         room_type_contains: Some("Suite".to_string()),
-    //     };
-    //
-    //     let results4 = processor.filter_options(&response, &criteria4);
-    //     assert_eq!(results4.len(), 1);
-    //     assert_eq!(results4[0].hotel_id, "hotel3");
-    //
-    //     // Test 5: Combined filters
-    //     let criteria5 = FilterCriteria {
-    //         max_price: Some(300.0),
-    //         board_types: Some(vec!["HB".to_string()]),
-    //         free_cancellation: true,
-    //         hotel_ids: None,
-    //         room_type_contains: Some("Suite".to_string()),
-    //     };
-    //
-    //     let results5 = processor.filter_options(&response, &criteria5);
-    //     assert_eq!(results5.len(), 1);
-    //     assert_eq!(results5[0].hotel_id, "hotel3");
-    // }
+    #[test]
+    fn test_filter_options() {
+        let processor = HotelSearchProcessor::new();
+
+        // Create a sample processed response with multiple hotels
+        let mut response = ProcessedResponse {
+            search_id: "test_search".to_string(),
+            total_options: 3,
+            hotels: Vec::new(),
+            currency: "GBP".to_string(),
+            nationality: "GB".to_string(),
+            check_in: "2025-06-01".to_string(),
+            check_out: "2025-06-05".to_string(),
+        };
+
+        // Add sample hotels with different properties
+        response.hotels.push(HotelOption {
+            hotel_id: "hotel1".to_string(),
+            hotel_name: "Luxury Hotel".to_string(),
+            room_type: "Deluxe King".to_string(),
+            room_description: "Spacious room with king bed".to_string(),
+            board_type: "BB".to_string(), // Bed & Breakfast
+            price: Price {
+                amount: 150.0,
+                currency: "GBP".to_string(),
+            },
+            cancellation_policies: vec![CancellationPolicy {
+                deadline: "2025-05-30T00:00:00Z".to_string(),
+                penalty_amount: 75.0,
+                currency: "GBP".to_string(),
+                hours_before: 48,
+                penalty_type: "Importe".to_string(),
+            }],
+            payment_type: "MerchantPay".to_string(),
+            is_refundable: true,
+            search_token: "token1".to_string(),
+        });
+
+        response.hotels.push(HotelOption {
+            hotel_id: "hotel2".to_string(),
+            hotel_name: "Budget Inn".to_string(),
+            room_type: "Standard Twin".to_string(),
+            room_description: "Basic room with twin beds".to_string(),
+            board_type: "RO".to_string(), // Room Only
+            price: Price {
+                amount: 80.0,
+                currency: "GBP".to_string(),
+            },
+            cancellation_policies: vec![],
+            payment_type: "MerchantPay".to_string(),
+            is_refundable: false,
+            search_token: "token2".to_string(),
+        });
+
+        response.hotels.push(HotelOption {
+            hotel_id: "hotel3".to_string(),
+            hotel_name: "Resort Spa".to_string(),
+            room_type: "Premium Suite".to_string(),
+            room_description: "Luxury suite with ocean view".to_string(),
+            board_type: "HB".to_string(), // Half Board
+            price: Price {
+                amount: 250.0,
+                currency: "GBP".to_string(),
+            },
+            cancellation_policies: vec![CancellationPolicy {
+                deadline: "2025-05-25T00:00:00Z".to_string(),
+                penalty_amount: 100.0,
+                currency: "GBP".to_string(),
+                hours_before: 168,
+                penalty_type: "Importe".to_string(),
+            }],
+            payment_type: "MerchantPay".to_string(),
+            is_refundable: true,
+            search_token: "token3".to_string(),
+        });
+
+        // Test 1: Filter by max price
+        let criteria1 = FilterCriteria {
+            max_price: Some(100.0),
+            board_types: None,
+            free_cancellation: false,
+            hotel_ids: None,
+            room_type_contains: None,
+        };
+
+        let results1 = processor.filter_options(&response, &criteria1);
+        assert_eq!(results1.len(), 1);
+        assert_eq!(results1[0].hotel_id, "hotel2");
+
+        // Test 2: Filter by board type
+        let criteria2 = FilterCriteria {
+            max_price: None,
+            board_types: Some(vec!["BB".to_string(), "HB".to_string()]),
+            free_cancellation: false,
+            hotel_ids: None,
+            room_type_contains: None,
+        };
+
+        let results2 = processor.filter_options(&response, &criteria2);
+        assert_eq!(results2.len(), 2);
+        assert!(results2.iter().any(|h| h.hotel_id == "hotel1"));
+        assert!(results2.iter().any(|h| h.hotel_id == "hotel3"));
+
+        // Test 3: Filter by free cancellation
+        let criteria3 = FilterCriteria {
+            max_price: None,
+            board_types: None,
+            free_cancellation: true,
+            hotel_ids: None,
+            room_type_contains: None,
+        };
+
+        let results3 = processor.filter_options(&response, &criteria3);
+        assert_eq!(results3.len(), 2);
+        assert!(results3.iter().all(|h| h.is_refundable));
+
+        // Test 4: Filter by room type
+        let criteria4 = FilterCriteria {
+            max_price: None,
+            board_types: None,
+            free_cancellation: false,
+            hotel_ids: None,
+            room_type_contains: Some("Suite".to_string()),
+        };
+
+        let results4 = processor.filter_options(&response, &criteria4);
+        assert_eq!(results4.len(), 1);
+        assert_eq!(results4[0].hotel_id, "hotel3");
+
+        // Test 5: Combined filters
+        let criteria5 = FilterCriteria {
+            max_price: Some(300.0),
+            board_types: Some(vec!["HB".to_string()]),
+            free_cancellation: true,
+            hotel_ids: None,
+            room_type_contains: Some("Suite".to_string()),
+        };
+
+        let results5 = processor.filter_options(&response, &criteria5);
+        assert_eq!(results5.len(), 1);
+        assert_eq!(results5[0].hotel_id, "hotel3");
+    }
 
     #[test]
     fn test_load_sample_response() {
