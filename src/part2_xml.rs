@@ -189,13 +189,15 @@ impl HotelSearchProcessor {
     // Process an XML hotel search response and extract key information
     // The response can be large (1MB+) and should be processed efficiently
     pub fn process(&self, xml: &str) -> Result<ProcessedResponse, ProcessingError> {
-        fn get_attr_map(attrs: Attributes) -> HashMap<QName<'_>, String> {
+        fn get_attr_map(attrs: Attributes) -> Result<HashMap<QName<'_>, String>, ProcessingError> {
             let mut map = HashMap::new();
             for attr in attrs {
-                let attr = attr.unwrap();
+                let attr = attr.map_err(|e| {
+                    ProcessingError::XmlParseError(format!("Attr not declared {:?}", e))
+                })?;
                 map.insert(attr.key, String::from_utf8_lossy(&attr.value).into_owned());
             }
-            map
+            Ok(map)
         }
 
         let mut reader = Reader::from_str(xml);
@@ -217,61 +219,92 @@ impl HotelSearchProcessor {
                 }
                 Ok(event) => match event {
                     Event::Start(e) if e.name().as_ref() == b"Hotel" => {
-                        let mut map = get_attr_map(e.attributes());
-                        hotel.hotel_id = map.remove(&QName(b"code")).unwrap();
-                        hotel.hotel_name = map.remove(&QName(b"name")).unwrap();
+                        let mut map = get_attr_map(e.attributes())?;
+                        hotel.hotel_id = map.remove(&QName(b"code")).unwrap_or_default();
+                        hotel.hotel_name = map.remove(&QName(b"name")).unwrap_or_default();
                     }
                     Event::Start(e) if e.name().as_ref() == b"Room" => {
-                        let mut map = get_attr_map(e.attributes());
-                        hotel.room_description = map.remove(&QName(b"description")).unwrap();
+                        let mut map = get_attr_map(e.attributes())?;
+                        hotel.room_description =
+                            map.remove(&QName(b"description")).unwrap_or_default();
                         hotel.is_refundable =
-                            map.remove(&QName(b"nonRefundable")).unwrap() == "false";
+                            map.remove(&QName(b"nonRefundable")).unwrap_or_default() == "false";
                     }
                     Event::Start(e) if e.name().as_ref() == b"Parameter" => {
-                        let mut map = get_attr_map(e.attributes());
+                        let mut map = get_attr_map(e.attributes())?;
                         hotel.search_token = map.remove(&QName(b"value")).unwrap();
                     }
                     Event::Start(e) if e.name().as_ref() == b"MealPlan" => {
-                        let mut map = get_attr_map(e.attributes());
+                        let mut map = get_attr_map(e.attributes())?;
                         hotel.board_type = map.remove(&QName(b"code")).unwrap();
                     }
                     Event::Start(e) | Event::Empty(e)
                         if pr.currency.is_empty() && e.name().as_ref() == b"Price" =>
                     {
-                        let mut map = get_attr_map(e.attributes());
-                        pr.currency = map.remove(&QName(b"currency")).unwrap();
+                        let mut map = get_attr_map(e.attributes())?;
+                        pr.currency = map.remove(&QName(b"currency")).unwrap_or_default();
                     }
                     Event::Start(e) | Event::Empty(e)
                         if hotel.price.currency.is_empty() && e.name().as_ref() == b"Price" =>
                     {
                         let mut price = Price::default();
-                        let mut map = get_attr_map(e.attributes());
-                        price.currency = map.remove(&QName(b"currency")).unwrap();
+                        let mut map = get_attr_map(e.attributes())?;
+                        price.currency = map.remove(&QName(b"currency")).unwrap_or_default();
                         price.amount = map
                             .remove(&QName(b"amount"))
-                            .unwrap()
+                            .unwrap_or_default()
                             .parse::<f64>()
-                            .unwrap();
+                            .map_err(|e| {
+                                ProcessingError::ConversionError(format!(
+                                    "Unable to convert in f64: {:?}",
+                                    e
+                                ))
+                            })?;
                         hotel.price = price;
                     }
                     Event::Start(e) if e.name().as_ref() == b"Option" => {
-                        let mut map = get_attr_map(e.attributes());
-                        hotel.payment_type = map.remove(&QName(b"paymentType")).unwrap();
+                        let mut map = get_attr_map(e.attributes())?;
+                        hotel.payment_type = map.remove(&QName(b"paymentType")).unwrap_or_default();
                     }
                     Event::Start(e) if e.name().as_ref() == b"HoursBefore" => {
-                        cancellation_policy.hours_before =
-                            reader.read_text(e.name()).unwrap().parse::<i32>().unwrap();
+                        cancellation_policy.hours_before = reader
+                            .read_text(e.name())
+                            .unwrap_or_default()
+                            .parse::<i32>()
+                            .map_err(|e| {
+                                ProcessingError::ConversionError(format!(
+                                    "Unable to convert in i32: {:?}",
+                                    e
+                                ))
+                            })?;
                     }
                     Event::Start(e) if e.name().as_ref() == b"Penalty" => {
-                        let mut map = get_attr_map(e.attributes());
-                        cancellation_policy.penalty_type = map.remove(&QName(b"type")).unwrap();
-                        cancellation_policy.currency = map.remove(&QName(b"currency")).unwrap();
-                        cancellation_policy.penalty_amount =
-                            reader.read_text(e.name()).unwrap().parse::<f64>().unwrap();
+                        let mut map = get_attr_map(e.attributes())?;
+                        cancellation_policy.penalty_type =
+                            map.remove(&QName(b"type")).unwrap_or_default();
+                        cancellation_policy.currency =
+                            map.remove(&QName(b"currency")).unwrap_or_default();
+                        cancellation_policy.penalty_amount = reader
+                            .read_text(e.name())
+                            .unwrap_or_default()
+                            .parse::<f64>()
+                            .map_err(|e| {
+                                ProcessingError::ConversionError(format!(
+                                    "Unable to convert in f64: {:?}",
+                                    e
+                                ))
+                            })?;
                     }
                     Event::Start(e) if e.name().as_ref() == b"Deadline" => {
-                        cancellation_policy.deadline =
-                            reader.read_text(e.name()).unwrap().into_owned();
+                        cancellation_policy.deadline = reader
+                            .read_text(e.name())
+                            .map_err(|e| {
+                                ProcessingError::XmlParseError(format!(
+                                    "Unable to read text {:?} ",
+                                    e
+                                ))
+                            })?
+                            .into_owned();
                     }
 
                     Event::End(e) if e.name().as_ref() == b"Hotel" => {

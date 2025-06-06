@@ -1,9 +1,28 @@
 // Part 3: Rate-Limited API Client Implementation (Advanced Difficulty)
 // This component is our customer-facing API that must handle extreme traffic while maintaining reliability
 
+use crate::circuit_breaker::CircuitBreaker;
 use async_trait::async_trait;
-use std::time::Duration;
+use mock_server::MockServer;
+// use parking_lot::RwLock;
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicBool, AtomicI16, AtomicU32, AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use thiserror::Error;
+use tokio::{sync::RwLock, time::Instant};
+
+use tokio::{
+    self,
+    sync::{
+        mpsc,
+        oneshot::{self, Sender},
+    },
+};
 
 // Enhanced error types for API client
 #[derive(Error, Debug)]
@@ -12,7 +31,7 @@ pub enum ApiError {
     NetworkError(String),
 
     #[error("Rate limit exceeded: {0}")]
-    RateLimitExceeded(String),
+    RateLimitExceeded(String, usize, usize),
 
     #[error("Request timeout after {0}ms")]
     Timeout(u64),
@@ -53,7 +72,7 @@ pub enum ClientError {
 }
 
 // Enhanced client configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ClientConfig {
     pub base_url: String,
     pub api_key: String,
@@ -103,7 +122,7 @@ impl Default for CircuitBreakerConfig {
         Self {
             failure_threshold: 5,
             success_threshold: 3,
-            reset_timeout_ms: 30000,
+            reset_timeout_ms: 4000,
             half_open_max_requests: 1,
         }
     }
@@ -112,10 +131,10 @@ impl Default for CircuitBreakerConfig {
 // Request priority levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RequestPriority {
-    Low = 0,
-    Medium = 1,
-    High = 2,
-    Critical = 3,
+    Low = 3,
+    Medium = 2,
+    High = 1,
+    Critical = 0,
 }
 
 impl Default for RequestPriority {
@@ -125,14 +144,14 @@ impl Default for RequestPriority {
 }
 
 // Enhanced client statistics
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct ClientStats {
-    pub requests_sent: usize,
-    pub requests_succeeded: usize,
-    pub requests_failed: usize,
-    pub requests_throttled: usize,
-    pub requests_retried: usize,
-    pub requests_preempted: usize,
+    pub requests_sent: AtomicUsize,
+    pub requests_succeeded: AtomicUsize,
+    pub requests_failed: AtomicUsize,
+    pub requests_throttled: AtomicUsize,
+    pub requests_retried: AtomicUsize,
+    pub requests_preempted: AtomicUsize,
     pub requests_timeout: usize,
     pub requests_circuit_broken: usize,
     pub average_response_time_ms: f64,
@@ -141,13 +160,13 @@ pub struct ClientStats {
     pub max_response_time_ms: f64,
     pub active_requests: usize,
     pub queue_depth: usize,
-    pub circuit_breaker_open: bool,
-    pub current_rate_limit: u32,
+    pub circuit_breaker_open: AtomicBool,
+    pub current_rate_limit: AtomicU32,
     pub adaptive_rate_limit_multiplier: f64,
 }
 
 // Request and response types (enhanced for the assessment)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SearchRequest {
     pub hotel_ids: Vec<String>,
     pub check_in: String,
@@ -156,6 +175,7 @@ pub struct SearchRequest {
     pub priority: RequestPriority,
     pub idempotency_key: Option<String>,
     pub context: RequestContext,
+    pub delay: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -174,7 +194,7 @@ pub struct ClientInfo {
     pub country: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SearchResponse {
     pub search_id: String,
     pub results: Vec<SearchResult>,
@@ -255,7 +275,57 @@ pub trait ApiClient: Send + Sync + 'static {
     async fn reset_circuit_breakers(&self) -> usize;
 }
 
+#[derive(Debug)]
+struct Bucket {
+    pub rate_limit: AtomicUsize,
+    pub rate_limit_window_ms: AtomicUsize,
+    bucket: parking_lot::RwLock<Vec<Instant>>,
+}
+
+impl Bucket {
+    pub fn get_token(&self) -> Result<(), ApiError> {
+        let now = Instant::now();
+        let limit = self.rate_limit.load(Ordering::SeqCst);
+        let window_ms = self.rate_limit_window_ms.load(Ordering::SeqCst);
+
+        // Clean up old requests beyond the window
+        let window_duration = Duration::from_millis(window_ms as u64);
+        self.bucket
+            .write()
+            .retain(|timestamp| now.duration_since(*timestamp) < window_duration);
+
+        // Check if we've hit the rate limit
+        if self.bucket.read().len() >= limit - 5 {
+            return Err(ApiError::RateLimitExceeded(
+                format!(
+                    "Rate limit of {} requests per {}ms exceeded",
+                    limit, window_ms
+                ),
+                limit,
+                window_ms,
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for Bucket {
+    fn default() -> Self {
+        Self {
+            rate_limit: AtomicUsize::new(10000),
+            rate_limit_window_ms: AtomicUsize::new(10000000),
+            bucket: parking_lot::RwLock::new(vec![]),
+        }
+    }
+}
+
+type RetryCount = u32;
+type PqMapK = (Instant, RequestPriority, RetryCount, String);
+type PqMapV = (SearchRequest, Sender<SearchResponse>);
+
 // Booking API client to implement
+#[derive(Default)]
 pub struct BookingApiClient {
     // TODO: Add appropriate fields here
     // You'll likely need:
@@ -265,22 +335,201 @@ pub struct BookingApiClient {
     // - Request tracking for telemetry
     // - Connection pools
     // - Retry mechanisms with backoff and jitter
+    search_pq: Arc<RwLock<BTreeMap<PqMapK, PqMapV>>>,
+    book_pq: Arc<RwLock<BTreeMap<(Duration, usize), Vec<BookingRequest>>>>,
+    config: ClientConfig,
+    retry_config: RetryConfig,
+    cb_config: CircuitBreakerConfig,
+    stats: ClientStats,
+    t_bucket: Bucket,
+}
+
+impl BookingApiClient {
+    async fn start_search_queue(
+        &self,
+        tx: mpsc::Sender<(PqMapK, PqMapV)>,
+        search_c_b: Arc<RwLock<CircuitBreaker>>,
+    ) {
+        loop {
+            let is_cb_closed = search_c_b.write().await.should_allow_call();
+
+            self.stats
+                .circuit_breaker_open
+                .swap(!is_cb_closed, Ordering::SeqCst);
+
+            if self.t_bucket.get_token().is_ok() && is_cb_closed {
+                let top = self.search_pq.write().await.pop_first();
+                if let Some((k, req)) = top {
+                    self.t_bucket.bucket.write().push(Instant::now());
+                    let res = tx.send((k.clone(), req)).await;
+                    res.unwrap();
+                } else {
+                    let _ = tokio::time::sleep(Duration::from_millis(200));
+                }
+            } else {
+                let is_cb_closed = search_c_b.write().await.should_allow_call();
+                self.stats
+                    .circuit_breaker_open
+                    .swap(!is_cb_closed, Ordering::SeqCst);
+                let _ = tokio::time::sleep(Duration::from_secs(2));
+            }
+        }
+    }
+
+    async fn start_request_hadler(
+        &self,
+        server: Arc<MockServer>,
+        search_c_b: Arc<RwLock<CircuitBreaker>>,
+        mut rx: mpsc::Receiver<(PqMapK, PqMapV)>,
+    ) {
+        while let Some(((_, _, retry_count, _), (req, tx))) = rx.recv().await {
+            // call to search API with circuit breaker
+            if retry_count > 0 {
+                // println!("retry cvount: {retry_count}");
+                self.stats.requests_retried.fetch_add(1, Ordering::SeqCst);
+            }
+
+            let res = server.handle_search(req.clone()).await;
+
+            match res {
+                Ok(res) => {
+                    let _ = tx.send(res);
+                    self.stats.requests_succeeded.fetch_add(1, Ordering::SeqCst);
+                    search_c_b.write().await.success();
+                }
+                Err(ApiError::RateLimitExceeded(msg, limit, ws_limit)) => {
+                    println!("Error: {msg:?}");
+                    self.stats.requests_failed.fetch_add(1, Ordering::SeqCst);
+
+                    self.t_bucket.rate_limit.swap(limit, Ordering::SeqCst);
+                    self.t_bucket
+                        .rate_limit_window_ms
+                        .swap(ws_limit + 100, Ordering::SeqCst);
+                    self.stats
+                        .current_rate_limit
+                        .swap(limit as u32, Ordering::SeqCst);
+                    self.stats.requests_throttled.fetch_add(1, Ordering::SeqCst);
+
+                    // if fails end this back to the PQ with added jitter
+                    if self.retry_config.max_retries > retry_count {
+                        let backoff =
+                            BookingApiClient::calculate_backoff(retry_count, &self.retry_config);
+
+                        // re-insert the request into PQ
+                        self.search_pq.write().await.insert(
+                            (
+                                Instant::now() + backoff,
+                                req.priority,
+                                retry_count + 1,
+                                req.idempotency_key.clone().unwrap_or_default(),
+                            ),
+                            (req.clone(), tx),
+                        );
+                    } else {
+                        self.stats.requests_preempted.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+                _ => {
+                    // TODO: Keep this below code in serparete func
+                    search_c_b.write().await.fail();
+                    self.stats.requests_failed.fetch_add(1, Ordering::SeqCst);
+                    // if fails send this back to the PQ with added jitter
+                    if self.retry_config.max_retries > retry_count {
+                        let backoff =
+                            BookingApiClient::calculate_backoff(retry_count, &self.retry_config);
+
+                        // re-insert the request into PQ
+                        self.search_pq.write().await.insert(
+                            (
+                                Instant::now() + backoff,
+                                req.priority,
+                                retry_count + 1,
+                                req.idempotency_key.clone().unwrap_or_default(),
+                            ),
+                            (req.clone(), tx),
+                        );
+                    } else {
+                        self.stats.requests_preempted.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn start(
+        my_client: Arc<BookingApiClient>,
+        server: Arc<MockServer>,
+        my_circuit_breaker: Arc<RwLock<CircuitBreaker>>,
+    ) {
+        let (tx, rx) = mpsc::channel::<(PqMapK, PqMapV)>(1000);
+
+        let client = my_client.clone();
+
+        let circuit_breaker = my_circuit_breaker.clone();
+
+        // Starts a task to pop new SearchRequest from BTreeMap indexed based on jitter and prority
+        let _ = tokio::spawn(async move {
+            client.start_search_queue(tx, circuit_breaker).await;
+        });
+
+        // Starts a task to get request PQueue.
+        // Check with CB if we can call this API and update th CB accordingly.
+        // If fails: update the CB and retry with added jitter and move to next req
+        // If success: just update the CB stats and move to next req
+        let client = my_client.clone();
+        let circuit_breaker = my_circuit_breaker.clone();
+
+        let _ = tokio::spawn(async move {
+            client
+                .start_request_hadler(server, circuit_breaker, rx)
+                .await
+        });
+    }
 }
 
 #[async_trait]
 impl ApiClient for BookingApiClient {
     async fn search(&self, request: SearchRequest) -> Result<SearchResponse, ApiError> {
         // TODO: Implement with:
+        //
         // - Rate limiting using token bucket algorithm
         // - Priority-based queueing
         // - Circuit breaker pattern
         // - Retry with exponential backoff and jitter
+        let (tx, rx) = oneshot::channel::<SearchResponse>();
+        let insert = self.search_pq.write().await.insert(
+            (
+                request.delay.unwrap_or_else(|| Instant::now()),
+                request.priority,
+                0,
+                request.idempotency_key.clone().unwrap_or_default(),
+            ),
+            (request, tx),
+        );
+
+        if insert.is_some() {
+            self.stats.requests_sent.fetch_add(1, Ordering::SeqCst);
+        }
+
+        tokio::spawn(async move {
+            match rx.await {
+                Ok(res) => {
+                    println!("Response: {res:?}");
+                    Ok(res)
+                }
+                Err(e) => {
+                    println!("Error: {e:?}");
+                    Err(ApiError::Other("NEoor in rcver ".to_string()))
+                }
+            }
+        });
+
         // - Detailed telemetry collection
         // - Adaptive throttling based on system health
         Err(ApiError::Other("Not implemented".to_string()))
     }
 
-    async fn book(&self, request: BookingRequest) -> Result<BookingResponse, ApiError> {
+    async fn book(&self, _request: BookingRequest) -> Result<BookingResponse, ApiError> {
         // TODO: Implement with higher priority than search requests
         // Bookings should be able to preempt search requests when needed
         Err(ApiError::Other("Not implemented".to_string()))
@@ -310,6 +559,7 @@ impl ApiClient for BookingApiClient {
 
     async fn update_config(&self, _config: ClientConfig) -> Result<(), ClientError> {
         // TODO: Implement dynamic configuration updates
+
         Err(ClientError::ConfigError("Not implemented".to_string()))
     }
 
@@ -338,7 +588,8 @@ impl BookingApiClient {
         // - Circuit breakers
         // - Connection pools
         // - Metrics collection
-        Ok(Self {})
+        let client = Self::default();
+        Ok(Self::default())
     }
 
     // Helper to calculate exponential backoff with jitter
@@ -356,7 +607,7 @@ impl BookingApiClient {
 }
 
 // Enhanced mock server for testing (you can modify or extend this)
-#[cfg(test)]
+// #[cfg(test)]
 pub mod mock_server {
     use super::*;
     use std::collections::HashMap;
@@ -396,7 +647,7 @@ pub mod mock_server {
                 booking_responses: Mutex::new(HashMap::new()),
                 fail_next_requests: AtomicUsize::new(0),
                 delay_ms: AtomicUsize::new(0),
-                rate_limit: AtomicUsize::new(100), // Default: 100 requests per window
+                rate_limit: AtomicUsize::new(1), // Default: 100 requests per window
                 rate_limit_window_ms: AtomicUsize::new(1000), // Default: 1-second window
                 recent_requests: Mutex::new(Vec::new()),
                 dropped_request_count: AtomicUsize::new(0),
@@ -442,6 +693,7 @@ pub mod mock_server {
             &self,
             request: SearchRequest,
         ) -> Result<SearchResponse, ApiError> {
+            // return Ok(SearchResponse::default());
             self.request_count.fetch_add(1, Ordering::SeqCst);
 
             // Check server mode
@@ -454,6 +706,26 @@ pub mod mock_server {
                 3 => {
                     // Partial outage - 50% chance of failure
                     if rand::random::<f32>() < 0.5 {
+                        return Err(ApiError::ApiResponseError {
+                            status_code: 503,
+                            message: "Service temporarily unavailable".to_string(),
+                            is_retryable: true,
+                        });
+                    }
+                }
+                2 => {
+                    // Partial outage - 20% chance of failure
+                    if rand::random::<f32>() < 0.2 {
+                        return Err(ApiError::ApiResponseError {
+                            status_code: 503,
+                            message: "Service temporarily unavailable".to_string(),
+                            is_retryable: true,
+                        });
+                    }
+                }
+                1 => {
+                    // Partial outage - 10% chance of failure
+                    if rand::random::<f32>() < 0.1 {
                         return Err(ApiError::ApiResponseError {
                             status_code: 503,
                             message: "Service temporarily unavailable".to_string(),
@@ -478,10 +750,16 @@ pub mod mock_server {
             // Check if we've hit the rate limit
             if recent.len() >= limit {
                 self.dropped_request_count.fetch_add(1, Ordering::SeqCst);
-                return Err(ApiError::RateLimitExceeded(format!(
-                    "Rate limit of {} requests per {}ms exceeded",
-                    limit, window_ms
-                )));
+                return Err(ApiError::RateLimitExceeded(
+                    format!(
+                        "R: {} Rate limit of {} requests per {}ms exceeded ",
+                        request.idempotency_key.unwrap_or_default(),
+                        limit,
+                        window_ms
+                    ),
+                    limit,
+                    window_ms,
+                ));
             }
 
             // Track this request
@@ -523,7 +801,12 @@ pub mod mock_server {
 
             // Default response
             Ok(SearchResponse {
-                search_id: format!("search-{}", rand::random::<u32>()),
+                search_id: format!(
+                    "search-{}",
+                    request
+                        .idempotency_key
+                        .unwrap_or_else(|| rand::random::<u32>().to_string())
+                ),
                 results: vec![],
                 rate_limit_remaining: Some((limit - recent.len()) as u32),
                 processing_time_ms: delay as u64,
@@ -595,13 +878,48 @@ mod tests {
     use super::*;
     use mock_server::{MockServer, ServerMode};
     use std::sync::Arc;
-    use std::time::Instant;
 
     #[tokio::test]
     async fn test_adaptive_rate_limiting() {
         // TODO: Implement this test
         // - Create a mock server that simulates different health states
+        let server = Arc::new(MockServer::new());
         // - Configure client with appropriate settings
+        let config = ClientConfig::default();
+        let client = Arc::new(BookingApiClient::new(config).await.unwrap());
+        let circuit_breaker = Arc::new(RwLock::new(CircuitBreaker::new(
+            client.cb_config.failure_threshold,
+            client.cb_config.success_threshold,
+            client.cb_config.reset_timeout_ms,
+        )));
+
+        let mc = client.clone();
+
+        let old_limit = client.t_bucket.rate_limit.load(Ordering::SeqCst);
+        let old_limit_ws = client.t_bucket.rate_limit_window_ms.load(Ordering::SeqCst);
+        assert_eq!(old_limit, 10000);
+        assert_eq!(old_limit_ws, 10000000);
+
+        tokio::spawn(async move {
+            let _ =
+                BookingApiClient::start(mc.clone(), server.clone(), circuit_breaker.clone()).await;
+        });
+
+        let mc = client.clone();
+        tokio::spawn(async move {
+            for _ in 0..10 {
+                let _ = mc.search(SearchRequest::default()).await;
+            }
+        });
+
+        // wait before server shutdowns
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        let new_limit = client.t_bucket.rate_limit.load(Ordering::SeqCst);
+        let new_limit_ws = client.t_bucket.rate_limit_window_ms.load(Ordering::SeqCst);
+
+        assert_eq!(new_limit, 1);
+        assert_eq!(new_limit_ws, 1000);
         // - Test that client adapts rate limits based on server health
         // - Verify statistics reflect the adaptations
     }
@@ -615,6 +933,43 @@ mod tests {
         // - Verify that subsequent requests fail fast with CircuitBreakerOpen
         // - Wait for reset timeout
         // - Verify circuit breaker allows half-open testing
+        let server = Arc::new(MockServer::new());
+        server.set_rate_limit(1000, 100000);
+        let config = ClientConfig::default();
+        let client = Arc::new(BookingApiClient::new(config).await.unwrap());
+        let circuit_breaker = Arc::new(RwLock::new(CircuitBreaker::new(
+            client.cb_config.failure_threshold,
+            client.cb_config.success_threshold,
+            client.cb_config.reset_timeout_ms,
+        )));
+
+        let mc = client.clone();
+        let cb = circuit_breaker.clone();
+        let sc = server.clone();
+
+        tokio::spawn(async move {
+            let _ = BookingApiClient::start(mc.clone(), sc, cb).await;
+        });
+
+        let mc = client.clone();
+
+        server.set_mode(ServerMode::CompleteOutage);
+        tokio::spawn(async move {
+            for _ in 0..6 {
+                let _ = mc.search(SearchRequest::default()).await;
+            }
+        });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(false, circuit_breaker.read().await.is_closed());
+
+        server.set_mode(ServerMode::Normal);
+        tokio::time::sleep(Duration::from_millis(client.cb_config.reset_timeout_ms)).await;
+
+        // check if CB again reset to closed
+        assert_eq!(true, circuit_breaker.read().await.is_closed());
+
+        // wait before server shutdowns
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 
     #[tokio::test]
@@ -625,6 +980,56 @@ mod tests {
         // - Then send high priority requests
         // - Verify high priority requests complete before low priority ones
         // - Verify some low priority requests were preempted
+
+        let server = Arc::new(MockServer::new());
+        server.set_rate_limit(20, 1000);
+
+        let config = ClientConfig::default();
+        let client = Arc::new(BookingApiClient::new(config).await.unwrap());
+
+        let circuit_breaker = Arc::new(RwLock::new(CircuitBreaker::new(
+            client.cb_config.failure_threshold,
+            client.cb_config.success_threshold,
+            client.cb_config.reset_timeout_ms,
+        )));
+
+        let mc = client.clone();
+        let cb = circuit_breaker.clone();
+        let sc = server.clone();
+
+        tokio::spawn(async move {
+            let _ = BookingApiClient::start(mc.clone(), sc, cb).await;
+        });
+
+        let mc = client.clone();
+
+        server.set_delay(2000);
+        let req_delay = tokio::time::Instant::now();
+        tokio::spawn(async move {
+            for i in 0..10 {
+                // High Priority Request
+                let req1 = SearchRequest {
+                    priority: RequestPriority::High,
+                    idempotency_key: Some((i + 10).to_string()),
+                    delay: Some(req_delay),
+                    ..Default::default()
+                };
+
+                // Low Priority Request
+                let req2 = SearchRequest {
+                    priority: RequestPriority::Low,
+                    idempotency_key: Some((i).to_string()),
+                    delay: Some(req_delay),
+                    ..Default::default()
+                };
+
+                let _ = mc.search(req2).await;
+                let _ = mc.search(req1).await;
+            }
+        });
+
+        // wait before server shutdowns
+        tokio::time::sleep(Duration::from_secs(20)).await;
     }
 
     #[tokio::test]
@@ -635,6 +1040,48 @@ mod tests {
         // - Measure time between retries to verify backoff
         // - Verify request eventually succeeds
         // - Check that retry statistics are updated
+
+        let server = Arc::new(MockServer::new());
+        server.set_rate_limit(20, 1000);
+
+        let config = ClientConfig::default();
+        let client = Arc::new(BookingApiClient::new(config).await.unwrap());
+
+        let circuit_breaker = Arc::new(RwLock::new(CircuitBreaker::new(
+            client.cb_config.failure_threshold,
+            client.cb_config.success_threshold,
+            client.cb_config.reset_timeout_ms,
+        )));
+
+        let mc = client.clone();
+        let cb = circuit_breaker.clone();
+
+        let sc = server.clone();
+        sc.fail_next_requests(5);
+
+        tokio::spawn(async move {
+            let _ = BookingApiClient::start(mc.clone(), sc, cb).await;
+        });
+
+        let mc = client.clone();
+
+        tokio::spawn(async move {
+            for i in 0..10 {
+                // High Priority Request
+                let req1 = SearchRequest {
+                    idempotency_key: Some((i).to_string()),
+                    ..Default::default()
+                };
+
+                let _ = mc.search(req1).await;
+            }
+        });
+
+        // wait before server shutdowns
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // check if exactly 5 req got retry once
+        assert_eq!(client.stats.requests_retried.load(Ordering::SeqCst), 5);
     }
 
     #[tokio::test]
@@ -646,5 +1093,53 @@ mod tests {
         // - Check that low priority requests are rejected when overloaded
         // - Verify high priority requests still get through
         // - Check statistics for throughput and latency
+        let server = Arc::new(MockServer::new());
+        server.set_rate_limit(200, 1000);
+
+        let config = ClientConfig::default();
+        let client = Arc::new(BookingApiClient::new(config).await.unwrap());
+
+        let circuit_breaker = Arc::new(RwLock::new(CircuitBreaker::new(
+            client.cb_config.failure_threshold,
+            client.cb_config.success_threshold,
+            client.cb_config.reset_timeout_ms,
+        )));
+
+        let mc = client.clone();
+        let cb = circuit_breaker.clone();
+
+        let sc = server.clone();
+        sc.set_mode(ServerMode::Degraded);
+
+        tokio::spawn(async move {
+            let _ = BookingApiClient::start(mc.clone(), sc, cb).await;
+        });
+
+        let mc = client.clone();
+
+        tokio::spawn(async move {
+            for i in 0..5000 {
+                // High Priority Request
+                let req1 = SearchRequest {
+                    idempotency_key: Some((i).to_string()),
+                    ..Default::default()
+                };
+
+                let _ = mc.search(req1).await;
+            }
+        });
+
+        // wait before server shutdowns
+        tokio::time::sleep(Duration::from_secs(500)).await;
+
+        // check if exactly 5 req got retry once
+        // assert_eq!(client.stats.requests_retried.load(Ordering::SeqCst), 5);
+        // assert_eq!(client.stats.requests_failed.load(Ordering::SeqCst), 5);
+        println!(
+            "fail count: {}, retry count: {}, pre count: {}",
+            client.stats.requests_failed.load(Ordering::SeqCst),
+            client.stats.requests_retried.load(Ordering::SeqCst),
+            client.stats.requests_preempted.load(Ordering::SeqCst)
+        );
     }
 }
